@@ -19,8 +19,8 @@
         <span class="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-2">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Port 3001 Active
         </span>
-        <button id="balance-btn" onclick="triggerOptimization()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-sm transition shadow-lg cursor-pointer">
-          Run Load Balance
+        <button id="balance-btn" onclick="toggleLiveSimulation()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-sm transition shadow-lg cursor-pointer">
+          Run Live Simulation
         </button>
       </div>
     </header>
@@ -46,7 +46,7 @@
       </div>
       <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800">
         <p class="text-xs font-medium text-slate-400 uppercase">Optimization Status</p>
-        <h3 class="text-3xl font-extrabold text-indigo-400 mt-2">Optimal</h3>
+        <h3 id="kpi-opt-status" class="text-3xl font-extrabold text-indigo-400 mt-2">Optimal</h3>
         <p class="text-xs text-slate-500 mt-3">DLB Engine Active</p>
       </div>
     </div>
@@ -97,6 +97,7 @@
     ];
 
     let chartInstance;
+    let simulationInterval = null;
 
     function renderBays() {
       const container = document.getElementById('bays-container');
@@ -117,7 +118,7 @@
               <span>${b.soc}%</span>
             </div>
             <div class="w-full bg-slate-800 rounded-full h-2">
-              <div class="bg-indigo-500 h-2 rounded-full" style="width: ${b.soc}%"></div>
+              <div class="bg-indigo-500 h-2 rounded-full transition-all duration-300" style="width: ${b.soc}%"></div>
             </div>
           </div>
           <div class="pt-2 border-t border-slate-800/80 flex justify-between items-center text-xs">
@@ -140,7 +141,6 @@
       document.getElementById('kpi-active-bays').textContent = `${bays.filter(b => b.status === 'Charging').length} / 4`;
     }
 
-    // Client-side fallback balancing algorithm
     function fallbackLoadBalance() {
       const active = bays.filter(b => b.status === "Charging");
       const highPrio = active.filter(b => b.priority === "HIGH");
@@ -179,8 +179,33 @@
         renderBays();
         updateKPIs(data.totalLoad || 0);
       } catch (err) {
-        console.warn('Backend fetch failed, running instant local balancing:', err);
         fallbackLoadBalance();
+      }
+    }
+
+    function toggleLiveSimulation() {
+      const btn = document.getElementById('balance-btn');
+      if (simulationInterval) {
+        clearInterval(simulationInterval);
+        simulationInterval = null;
+        btn.innerText = "Run Live Simulation";
+        btn.classList.remove('bg-amber-400', 'hover:bg-amber-300');
+        btn.classList.add('bg-emerald-500', 'hover:bg-emerald-400');
+      } else {
+        btn.innerText = "⏸ Pause Live Simulation";
+        btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-400');
+        btn.classList.add('bg-amber-400', 'hover:bg-amber-300');
+        
+        triggerOptimization();
+
+        simulationInterval = setInterval(() => {
+          bays.forEach(b => {
+            if (b.status === "Charging" && b.soc < 98) {
+              b.soc = Math.min(100, b.soc + 1);
+            }
+          });
+          triggerOptimization();
+        }, 1500);
       }
     }
 
@@ -229,7 +254,6 @@
       }
     }
 
-    // Initialize Chart
     const ctx = document.getElementById('loadChart').getContext('2d');
     chartInstance = new Chart(ctx, {
       type: 'line',
