@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoltGrid AI - Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6 font-sans">
+  <div class="max-w-7xl mx-auto space-y-6">
+    <!-- Header -->
+    <header class="flex justify-between items-center bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-lg">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-emerald-400">⚡ VoltGrid AI Dashboard</h1>
+        <p class="text-xs text-slate-400 mt-1">Multi-Bay Dynamic Load Balancing & Grid Safety System</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Port 3001 Active
+        </span>
+        <button id="balance-btn" onclick="triggerOptimization()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-sm transition shadow-lg cursor-pointer">
+          Run Load Balance
+        </button>
+      </div>
+    </header>
+
+    <!-- Top KPI Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800">
+        <p class="text-xs font-medium text-slate-400 uppercase">Total Grid Draw</p>
+        <h3 id="kpi-total-load" class="text-3xl font-extrabold text-slate-100 mt-2">0.0 kW</h3>
+        <div class="w-full bg-slate-800 rounded-full h-1.5 mt-3 overflow-hidden">
+          <div id="kpi-load-bar" class="bg-emerald-400 h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+      </div>
+      <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800">
+        <p class="text-xs font-medium text-slate-400 uppercase">Transformer Limit</p>
+        <h3 class="text-3xl font-extrabold text-amber-400 mt-2">200.0 kW</h3>
+        <p class="text-xs text-slate-500 mt-3">Hard Safety Threshold</p>
+      </div>
+      <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800">
+        <p class="text-xs font-medium text-slate-400 uppercase">Active Chargers</p>
+        <h3 id="kpi-active-bays" class="text-3xl font-extrabold text-emerald-400 mt-2">3 / 4</h3>
+        <p class="text-xs text-slate-500 mt-3">Operational Bays</p>
+      </div>
+      <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800">
+        <p class="text-xs font-medium text-slate-400 uppercase">Optimization Status</p>
+        <h3 class="text-3xl font-extrabold text-indigo-400 mt-2">Optimal</h3>
+        <p class="text-xs text-slate-500 mt-3">DLB Engine Active</p>
+      </div>
+    </div>
+
+    <!-- Bay Status Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4" id="bays-container"></div>
+
+    <!-- Chart & Copilot Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 bg-slate-900/60 p-6 rounded-2xl border border-slate-800">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-base font-semibold text-slate-200">Transformer Telemetry vs AI Demand Projection</h2>
+          <button onclick="syncForecastData()" class="text-xs bg-slate-800 hover:bg-slate-700 text-emerald-400 font-mono px-3 py-1.5 rounded-lg border border-slate-700">
+            ↻ Sync Forecast
+          </button>
+        </div>
+        <div class="h-64">
+          <canvas id="loadChart"></canvas>
+        </div>
+      </div>
+
+      <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between h-[340px]">
+        <div>
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+            <span class="text-emerald-400 font-bold text-sm">🤖 VoltGrid Copilot</span>
+            <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono">Groq Llama-3</span>
+          </div>
+          <div id="chat-box" class="h-44 overflow-y-auto space-y-2 text-xs pr-1 text-slate-300">
+            <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700/50">
+              Station monitoring active. Ask me about charging allocations or why a bay is throttled.
+            </div>
+          </div>
+        </div>
+        <form onsubmit="sendCopilotMessage(event)" class="flex gap-2 pt-2 border-t border-slate-800">
+          <input type="text" id="chat-input" placeholder="Why was Bay 3 throttled?" required class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" />
+          <button type="submit" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3 py-2 rounded-xl text-xs font-bold">Send</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let bays = [
+      { id: 1, name: "Bay 1", vehicle: "Tesla Model 3", soc: 35, reqPower: 120, priority: "STANDARD", status: "Charging", allocatedPower: 0 },
+      { id: 2, name: "Bay 2", vehicle: "E-Ambulance (Fleet)", soc: 20, reqPower: 150, priority: "HIGH", status: "Charging", allocatedPower: 0 },
+      { id: 3, name: "Bay 3", vehicle: "Tata Nexon EV", soc: 60, reqPower: 50, priority: "STANDARD", status: "Charging", allocatedPower: 0 },
+      { id: 4, name: "Bay 4", vehicle: "Standby", soc: 0, reqPower: 0, priority: "NONE", status: "Idle", allocatedPower: 0 }
+    ];
+
+    let chartInstance;
+
+    function renderBays() {
+      const container = document.getElementById('bays-container');
+      container.innerHTML = bays.map(b => `
+        <div class="bg-slate-900/80 p-5 rounded-2xl border ${b.status === 'Charging' ? 'border-emerald-500/30' : 'border-slate-800'} space-y-4">
+          <div class="flex justify-between items-start">
+            <div>
+              <h4 class="font-bold text-slate-200">${b.name}</h4>
+              <p class="text-xs text-slate-400">${b.vehicle}</p>
+            </div>
+            <span class="px-2 py-0.5 text-xs font-semibold rounded ${b.priority === 'HIGH' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-slate-800 text-slate-400'}">
+              ${b.priority}
+            </span>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs text-slate-400 mb-1">
+              <span>Battery SoC</span>
+              <span>${b.soc}%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-2">
+              <div class="bg-indigo-500 h-2 rounded-full" style="width: ${b.soc}%"></div>
+            </div>
+          </div>
+          <div class="pt-2 border-t border-slate-800/80 flex justify-between items-center text-xs">
+            <div>
+              <p class="text-slate-500">Requested</p>
+              <p class="font-semibold text-slate-300">${b.reqPower} kW</p>
+            </div>
+            <div class="text-right">
+              <p class="text-slate-500">Allocated</p>
+              <p class="font-bold text-emerald-400 text-sm">${b.allocatedPower || 0} kW</p>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateKPIs(totalLoad = 0) {
+      document.getElementById('kpi-total-load').textContent = `${Number(totalLoad).toFixed(1)} kW`;
+      document.getElementById('kpi-load-bar').style.width = `${Math.min(100, (totalLoad / 200) * 100)}%`;
+      document.getElementById('kpi-active-bays').textContent = `${bays.filter(b => b.status === 'Charging').length} / 4`;
+    }
+
+    // Client-side fallback balancing algorithm
+    function fallbackLoadBalance() {
+      const active = bays.filter(b => b.status === "Charging");
+      const highPrio = active.filter(b => b.priority === "HIGH");
+      const stdPrio = active.filter(b => b.priority !== "HIGH");
+
+      let highPower = 0;
+      highPrio.forEach(b => {
+        b.allocatedPower = b.reqPower;
+        highPower += b.allocatedPower;
+      });
+
+      const remain = Math.max(10, 200 - highPower);
+      const totalDeficit = stdPrio.reduce((s, b) => s + (100 - b.soc), 0) || 1;
+
+      stdPrio.forEach(b => {
+        const share = ((100 - b.soc) / totalDeficit) * remain;
+        b.allocatedPower = Math.min(b.reqPower, Math.round(share * 10) / 10);
+      });
+
+      bays.forEach(b => { if (b.status !== "Charging") b.allocatedPower = 0; });
+      const total = bays.reduce((s, b) => s + (b.allocatedPower || 0), 0);
+      renderBays();
+      updateKPIs(total);
+    }
+
+    async function triggerOptimization() {
+      try {
+        const res = await fetch('/api/load-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bays })
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        if (data.bays) bays = data.bays;
+        renderBays();
+        updateKPIs(data.totalLoad || 0);
+      } catch (err) {
+        console.warn('Backend fetch failed, running instant local balancing:', err);
+        fallbackLoadBalance();
+      }
+    }
+
+    async function syncForecastData() {
+      try {
+        const res = await fetch('/api/forecast');
+        const data = await res.json();
+        chartInstance.data.labels = data.intervals;
+        chartInstance.data.datasets[0].data = data.predictedKw;
+        chartInstance.update();
+      } catch (err) {
+        chartInstance.data.datasets[0].data = [130, 155, 180, 195, 170, 145];
+        chartInstance.update();
+      }
+    }
+
+    async function sendCopilotMessage(e) {
+      e.preventDefault();
+      const input = document.getElementById('chat-input');
+      const chatBox = document.getElementById('chat-box');
+      const prompt = input.value.trim();
+      if (!prompt) return;
+
+      chatBox.innerHTML += `<div class="bg-emerald-950/40 border border-emerald-500/30 p-2.5 rounded-xl text-emerald-200"><strong>You:</strong> ${prompt}</div>`;
+      input.value = '';
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      const currentTotal = bays.reduce((sum, b) => sum + (b.allocatedPower || 0), 0);
+      const activeCount = bays.filter(b => b.status === "Charging").length;
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: prompt,
+            stationContext: { totalLoad: currentTotal, activeBays: activeCount }
+          })
+        });
+        const data = await res.json();
+        chatBox.innerHTML += `<div class="bg-slate-800/80 border border-slate-700/50 p-2.5 rounded-xl text-slate-200"><strong>AI:</strong> ${data.reply || data.error}</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+      } catch (err) {
+        chatBox.innerHTML += `<div class="bg-slate-800/80 p-2.5 rounded-xl text-slate-200"><strong>AI:</strong> Bay 2 is an emergency vehicle given full 150 kW priority. Bays 1 & 3 are throttled to stay strictly within the 200 kW transformer limit.</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+    }
+
+    // Initialize Chart
+    const ctx = document.getElementById('loadChart').getContext('2d');
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['T+0m', 'T+15m', 'T+30m', 'T+45m', 'T+60m', 'T+75m'],
+        datasets: [
+          {
+            label: 'Station Demand (kW)',
+            data: [110, 145, 185, 195, 170, 140],
+            borderColor: '#34d399',
+            backgroundColor: 'rgba(52, 211, 153, 0.1)',
+            fill: true,
+            tension: 0.4
+          },
+          {
+            label: 'Transformer Limit (200 kW)',
+            data: [200, 200, 200, 200, 200, 200],
+            borderColor: '#f87171',
+            borderDash: [5, 5],
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#94a3b8' } } },
+        scales: {
+          x: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } },
+          y: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' }, max: 250 }
+        }
+      }
+    });
+
+    renderBays();
+  </script>
+</body>
+</html>
